@@ -1,0 +1,15 @@
+scenario,monitor,accuracy,fault_detection_latency,false_positives,false_negatives,total_transitions,total_samples,matched_samples
+normal_sparse_reporting,proposed,1.0,-1.0,0,0,0,300,300
+normal_sparse_reporting,baseline,1.0,-1.0,0,0,0,300,300
+suppression_window,proposed,1.0,-1.0,0,0,2,300,300
+suppression_window,baseline,0.6,-1.0,60,0,2,300,180
+temporary_dropout,proposed,0.9,-1.0,0,0,2,300,270
+temporary_dropout,baseline,0.9,-1.0,0,0,2,300,270
+jitter_delayed_delivery,proposed,1.0,-1.0,0,0,0,300,300
+jitter_delayed_delivery,baseline,1.0,-1.0,0,0,0,300,300
+gradual_degradation,proposed,0.71,33.0,0,33,3,300,213
+gradual_degradation,baseline,0.71,33.0,0,33,3,300,213
+hard_fault_offline,proposed,0.9,30.0,0,30,2,300,270
+hard_fault_offline,baseline,0.9,30.0,0,30,2,300,270
+flapping_intermittent,proposed,0.9,30.0,0,30,4,300,270
+flapping_intermittent,baseline,0.7,30.0,0,90,4,300,210
