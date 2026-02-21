@@ -21,7 +21,7 @@ class DeviceState (Enum):
 
 
 class Event(Enum):
-    HEARTBEAT = "HEARBEAT"
+    HEARTBEAT = "HEARTBEAT"
     ABSENCE = "ABSENCE"
     SUPPRESS_ON = "SUPPRESS_ON"
     SUPPRESS_OFF = "SUPPRESS_OFF"
