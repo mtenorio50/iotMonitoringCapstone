@@ -104,6 +104,7 @@ def plot_accuracy_comparison(results: list[tuple], save: bool = True):
 # PLOT 2: False positives and negatives comparison (RQ1 + RQ2)
 # ═══════════════════════════════════════════════════════════════════
 
+
 def plot_fp_fn_comparison(results: list[tuple], save: bool = True):
     """
     Grouped bar chart showing FP and FN counts per scenario.
@@ -225,6 +226,7 @@ def plot_state_timeline(
 # ═══════════════════════════════════════════════════════════════════
 # PLOT 4: Trade-off curves (RQ3)
 # ═══════════════════════════════════════════════════════════════════
+
 
 def plot_tradeoff_curves(
     sweep_results: list[tuple[float, list[tuple]]],
