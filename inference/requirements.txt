@@ -1,0 +1,14 @@
+# ─── Web framework ───
+fastapi>=0.110.0
+uvicorn>=0.29.0
+
+# ─── MQTT ───
+paho-mqtt>=2.0.0
+
+# ─── Experiment & metrics ───
+matplotlib>=3.8.0
+seaborn>=0.13.0
+pandas>=2.2.0
+
+# ─── Testing ───
+pytest>=8.0.0

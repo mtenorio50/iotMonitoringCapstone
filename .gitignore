@@ -25,3 +25,9 @@ Thumbs.db
 
 # IDE
 .idea/
+
+claude.md
+
+__pycache__/
+__init__.py
+
