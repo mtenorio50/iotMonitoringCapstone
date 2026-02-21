@@ -1,4 +1,4 @@
-# Capstone Dev Log — ThingsBoard + Inference Service Setup (Yesterday + Today)
+# Capstone Dev Log
 
 ## Context
 Goal: Stand up a low-cost, always-on environment to host ThingsBoard CE (visuals + device ingestion) and a Python “inference brain” service, both on a Lightsail Ubuntu 24.04 instance, with ESP32 sending minimal telemetry.
@@ -7,7 +7,7 @@ Instance choice: 2GB RAM plan (with swap as safety buffer). Upgrade later only i
 
 ---
 
-## Yesterday
+## 1 Jan 2026 — Initial Setup (Server + ThingsBoard + ESP32)
 
 ### 1) Server baseline and updates
 - Logged into the Ubuntu 24.04 Lightsail instance.
@@ -45,7 +45,7 @@ Reason: ThingsBoard (Java) spikes RAM on startup and during DB initialization; s
 
 ---
 
-## Today
+## 22 Jan 2026 — OLED Integration + Runtime Fixes
 
 ### 1) Compose/runtime instability addressed
 - Encountered compose errors when recreating containers (including `KeyError: 'ContainerConfig'`).
@@ -110,9 +110,81 @@ Goal: Stand up a separate “inference brain” service that TB can call via RES
 
 ---
 
-## Immediate Next Step
-Standardize telemetry keys to avoid ambiguity:
-- Rename `rssi` → `rssi_dbm` (same value)
-- Keep `hb`, `uptime_ms`, `rssi_dbm`
-Then proceed to: TB rule chain that calls the inference service and writes inferred state + reason tag back into telemetry/attributes.
+## 21 Feb 2026 — Inference System Build-Out
+
+### 6) State machine implementation (state_machine.py)
+- Implemented `DeviceMonitor` — the proposed FSM with 5 states: OK, STALE, OFFLINE_FAULT, RECOVERED, SILENT.
+- Key design features:
+  - Graduated escalation: 2 absences → STALE, 4 absences → FAULT.
+  - Hysteresis on recovery: requires 2 consecutive heartbeats to confirm recovery.
+  - Suppression awareness: SILENT state during planned maintenance windows.
+  - Relapse protection: absence during RECOVERED → back to FAULT.
+  - Full audit trail: every transition logged with timestamp, event, and reason tag.
+- Implemented `BaselineMonitor` — simple timeout counter as control experiment.
+  - No suppression awareness, no RECOVERED state, no hysteresis.
+  - Single heartbeat = immediate recovery (prone to flapping).
+- Defined `MonitorConfig` with tunable parameters (heartbeat interval, tolerance, thresholds).
+
+### 7) Digital twin scenario simulator (digital_twin.py)
+- Built `DigitalTwin` class that generates 7 synthetic test scenarios, each with:
+  - Controlled event streams (heartbeats, absences, suppression signals).
+  - Ground truth state timelines for validation.
+- Scenarios mapped to proposal Table 2:
+  1. Normal sparse reporting — sanity check
+  2. Suppression window — tests false alarm avoidance during planned silence
+  3. Temporary dropout — tests connectivity loss detection and recovery
+  4. Jitter/delayed delivery — tests transport delay tolerance
+  5. Gradual degradation — tests slow failure detection
+  6. Hard fault offline — tests sudden failure detection
+  7. Flapping intermittent — tests hysteresis against fluke heartbeats
+- All scenarios parameterised by heartbeat_interval for RQ3 parameter sweeps.
+- Fixed random seed (42) for reproducible results.
+
+### 8) Metrics engine (metrics.py)
+- Implemented time-aligned comparison: samples inferred vs ground truth at 1-second intervals.
+- Computes: accuracy, false positives, false negatives, fault detection latency, total transitions.
+- Match rules: RECOVERED and STALE are acceptable during FAULT ground truth (monitor is escalating).
+
+### 9) Experiment runner (run_experiments.py)
+- Runs all 7 scenarios through both monitors and collects paired metrics.
+- Outputs comparison table to console and `results/summary.csv`.
+- Supports parameter sweep: varies heartbeat interval [15s, 30s, 60s, 120s] for RQ3.
+
+### 10) Visualization (plots.py)
+- Generates 4 types of publication-quality plots:
+  1. **Accuracy comparison bar chart** (RQ1) — proposed vs baseline across all scenarios.
+  2. **FP/FN grouped bar chart** (RQ1 + RQ2) — error breakdown per scenario.
+  3. **State timeline plots** (RQ2) — ground truth vs proposed vs baseline for key scenarios.
+  4. **Trade-off curves** (RQ3) — accuracy vs heartbeat interval sweep.
+- Consistent color scheme across all plots (green=OK, orange=STALE, red=FAULT, blue=RECOVERED, purple=SILENT).
+- Output: `results/plots/*.png`
+
+### Key Experiment Results
+| Scenario | Proposed | Baseline | Key Finding |
+|----------|----------|----------|-------------|
+| Normal sparse reporting | 100% | 100% | Both correct (sanity check) |
+| Suppression window | 100% | 60% | Baseline generates 60 FPs during planned silence |
+| Temporary dropout | 90% | 90% | Equal performance on dropout |
+| Jitter/delayed delivery | 100% | 100% | Both handle jitter well |
+| Gradual degradation | 71% | 71% | Both struggle with slow degradation |
+| Hard fault offline | 90% | 90% | Equal on hard failure |
+| Flapping intermittent | 90% | 70% | Baseline false-recovers on single fluke heartbeat |
+
+---
+
+## Decisions Locked (Updated — 21 Feb 2026)
+- Hosting approach: Lightsail Ubuntu 24.04 + Docker.
+- Visuals: ThingsBoard CE.
+- "Brain": separate Python FastAPI service callable from TB via REST.
+- Telemetry: minimal set includes heartbeat + uptime + RSSI.
+- Cost control: stay on 2GB plan; use swap; only upgrade if evidence forces it.
+- Validation: digital twin approach with 7 scenarios and time-aligned metrics.
+- Comparison: proposed FSM vs baseline timeout monitor as control.
+
+---
+
+## Immediate Next Steps (as of 21 Feb 2026)
+- Integrate the inference service with ThingsBoard rule chain (REST API call on telemetry arrival).
+- Write inferred state + reason tag back to ThingsBoard as device attributes.
+- Standardize telemetry keys: consider renaming `rssi` → `rssi_dbm`.
 

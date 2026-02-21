@@ -230,6 +230,14 @@ Outcome:
   - `docker ps`, `docker logs`, `docker stats`
   - `free -h`, `swapon --show`
   - `nginx -t`, `systemctl status nginx`
+- **Inference validation system complete**:
+  - `state_machine.py` — proposed FSM monitor with 5 states, hysteresis, suppression, and audit trail
+  - `baseline_monitor.py` — control monitor (simple timeout counter)
+  - `digital_twin.py` — 7 synthetic test scenarios with ground truth timelines
+  - `metrics.py` — time-aligned evaluation (accuracy, FP, FN, detection latency)
+  - `run_experiments.py` — experiment runner outputting `results/summary.csv`
+  - `plots.py` — publication-quality plots to `results/plots/`
+- **Experiment results generated**: proposed monitor outperforms baseline in suppression (100% vs 60%) and flapping (90% vs 70%) scenarios
 
 ---
 
@@ -238,4 +246,6 @@ Outcome:
 - Don’t mix `thingsboard/tb-postgres` (internal DB) with an external Postgres service unless you fully understand it.
 - If TB UI “doesn’t show features,” assume wrong version/profile/context before assuming you’re doing it wrong.
 - For capstone speed: MQTT + PubSubClient beats library gymnastics.
+- Fixed random seed matters — without seed=42 in the digital twin, experiments produce different results each run and results become unreproducible.
+- Time-aligned sampling (1-second intervals) is essential for fair accuracy metrics — event-level comparison would distort results when event spacing is uneven.
 

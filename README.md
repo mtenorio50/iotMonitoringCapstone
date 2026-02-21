@@ -15,12 +15,25 @@ The stack is intentionally lightweight and cheap to run (AWS Lightsail + Docker)
 - Telemetry arrival is an event.
 - Missing telemetry is turned into an explicit “absence event” (time-window based), instead of being treated as a vague dashboard symptom.
 
-3) Explicit inference as a state machine (Python service)  
-- A small inference service applies deterministic rules:
-  - OK, SILENT (suppression), STALE, OFFLINE/FAULT
+3) Explicit inference as a state machine (Python service)
+- A proposed FSM monitor applies deterministic rules with graduated escalation:
+  - OK → STALE → OFFLINE_FAULT → RECOVERED → OK
+  - SILENT state for planned suppression windows
+- Hysteresis: requires multiple consecutive heartbeats to confirm recovery (prevents flapping).
 - Each state transition produces a reason tag for auditability.
 
-4) ThingsBoard used for transport + visualization  
+4) Baseline comparison (control experiment)
+- A simple timeout-based monitor serves as the control.
+- No suppression awareness, no RECOVERED state, no hysteresis.
+- Used to answer RQ1: “How does inference-first compare to timeout-based monitoring?”
+
+5) Digital twin validation
+- 7 synthetic scenarios simulate real-world conditions (normal, suppression, dropout, jitter, degradation, hard fault, flapping).
+- Time-aligned metrics (accuracy, FP, FN, detection latency) compare both monitors against ground truth.
+- Parameter sweeps vary heartbeat interval to explore telemetry-rate trade-offs (RQ3).
+- Publication-quality plots generated for the report.
+
+6) ThingsBoard used for transport + visualization
 - ThingsBoard handles device connectivity (MQTT) and dashboards.
 - Python is the “brain” that produces inferred state timelines and reasons.
 
@@ -35,29 +48,30 @@ ESP32 (MQTT telemetry)
 
 ---
 
-## Repo structure (suggested)
+## Repo structure
 
 .
-├── scs-stack/
-│   ├── docker-compose.yml
-│   ├── nginx/
-│   │   └── thingsboard.conf
-│   └── inference/
-│       ├── Dockerfile
-│       └── app/
-│           └── main.py
+├── inference/
+│   ├── Dockerfile
+│   └── app/
+│       ├── main.py               # FastAPI service (GET /health)
+│       ├── state_machine.py      # Proposed FSM monitor (OK → STALE → FAULT → RECOVERED → SILENT)
+│       ├── baseline_monitor.py   # Control monitor (simple timeout, no hysteresis/suppression)
+│       ├── digital_twin.py       # Scenario simulator — 7 synthetic test scenarios with ground truth
+│       ├── metrics.py            # Evaluation engine — accuracy, FP, FN, detection latency
+│       ├── run_experiments.py    # Experiment runner — runs all scenarios, outputs CSV
+│       └── plots.py              # Visualization — generates publication-quality PNG plots
+├── inference/results/
+│   ├── summary.csv               # Experiment results (7 scenarios × 2 monitors)
+│   └── plots/                    # Generated plot PNGs (accuracy, FP/FN, timelines, trade-offs)
 ├── esp32/
 │   ├── platformio.ini
 │   └── src/
 │       └── main.cpp
 └── docs/
-    └── build-notes.md
-
-Notes:
-- `docs/build-notes.md` = the “issues + fixes” log (your engineering trail).
-- `inference/app/main.py` should expose at least:
-  - `GET /health`
-  - `POST /infer` (or similar)
+    ├── steps.md                  # Dev log (setup + deployment trail)
+    ├── issues.md                 # Issues encountered + fixes applied
+    └── architecture.md           # System architecture notes
 
 ---
 
@@ -90,4 +104,62 @@ Check:
 ### 2) Clone repo
 ```bash
 git clone <your-repo-url>
-cd scs-stack
+cd capstoneProject
+```
+
+---
+
+## Running the Inference Experiments
+
+The inference subsystem runs entirely offline — no server or ESP32 needed.
+
+### Install dependencies
+```bash
+cd inference
+pip install -r requirements.txt   # FastAPI, matplotlib, numpy
+```
+
+### Run all experiments and print comparison table
+```bash
+python -m app.run_experiments
+```
+Outputs `results/summary.csv` with accuracy, FP, FN, and detection latency for all 7 scenarios.
+
+### Generate plots for the report
+```bash
+python -m app.plots
+```
+Outputs PNG plots to `results/plots/`:
+- `accuracy_comparison.png` — Proposed vs baseline accuracy per scenario (RQ1)
+- `fp_fn_comparison.png` — False positives & negatives breakdown (RQ1 + RQ2)
+- `timeline_*.png` — State timelines showing ground truth vs inferred states (RQ2)
+- `tradeoff_curves.png` — Accuracy vs heartbeat interval sweep (RQ3)
+
+### Preview digital twin scenarios
+```bash
+python -m app.digital_twin
+```
+
+---
+
+## Research Questions Addressed
+
+| RQ | Question | Evidence |
+|----|----------|----------|
+| RQ1 | How does inference-first compare to timeout-based monitoring? | Accuracy comparison + FP/FN counts across 7 scenarios |
+| RQ2 | Can the proposed monitor reduce false alarms during planned silence? | Suppression window scenario (100% vs 60% accuracy) + state timelines |
+| RQ3 | What is the trade-off between reducing telemetry and inference quality? | Parameter sweep plots across heartbeat intervals 15s–120s |
+
+---
+
+## Key Experiment Results (summary.csv)
+
+| Scenario | Proposed Accuracy | Baseline Accuracy | Key Difference |
+|----------|------------------|-------------------|----------------|
+| Normal sparse reporting | 100% | 100% | Both correct (sanity check) |
+| Suppression window | 100% | 60% | Baseline has 60 FPs during planned silence |
+| Temporary dropout | 90% | 90% | Both handle dropout equally |
+| Jitter/delayed delivery | 100% | 100% | Both handle jitter well |
+| Gradual degradation | 71% | 71% | Both struggle with slow degradation |
+| Hard fault offline | 90% | 90% | Both detect hard failure equally |
+| Flapping intermittent | 90% | 70% | Baseline false-recovers on single fluke heartbeat |
