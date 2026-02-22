@@ -33,18 +33,20 @@ The stack is intentionally lightweight and cheap to run (AWS Lightsail + Docker)
 - Parameter sweeps vary heartbeat interval to explore telemetry-rate trade-offs (RQ3).
 - Publication-quality plots generated for the report.
 
-6) ThingsBoard used for transport + visualization
-- ThingsBoard handles device connectivity (MQTT) and dashboards.
-- Python is the “brain” that produces inferred state timelines and reasons.
+6) ThingsBoard used for visualization + storage
+- Mosquitto handles MQTT transport (device telemetry + inferred state pub/sub).
+- Python MQTT bridge is the “brain” that subscribes to heartbeats, runs the state machine, and pushes inferred state to both Mosquitto and ThingsBoard HTTP API.
+- ThingsBoard provides dashboards and telemetry storage.
 
 ---
 
 ## Architecture (high level)
 
-ESP32 (MQTT telemetry)
-→ ThingsBoard (ingestion + rule chain)
-→ REST API call to Python inference service
-→ ThingsBoard stores inferred results (telemetry/attributes) for dashboards
+ESP32 (MQTT telemetry: hb, rssi_dbm, uptime_ms)
+→ Mosquitto MQTT broker
+→ MQTT Bridge (Python) subscribes, runs state machine, detects absence
+→ Publishes inferred state to Mosquitto (retained) + ThingsBoard HTTP API
+→ ThingsBoard dashboards display inferred state, reason tags, and forwarded telemetry
 
 ---
 
@@ -62,6 +64,7 @@ ESP32 (MQTT telemetry)
 │   │   ├── main.py                 # FastAPI service (GET /health)
 │   │   ├── state_machine.py        # Proposed FSM monitor (OK → STALE → FAULT → RECOVERED → SILENT)
 │   │   ├── baseline_monitor.py     # Control monitor (simple timeout, no hysteresis/suppression)
+│   │   ├── mqtt_bridge.py          # Live MQTT integration — subscribes to Mosquitto, runs state machine
 │   │   ├── digital_twin.py         # Scenario simulator — 7 synthetic test scenarios with ground truth
 │   │   ├── metrics.py              # Evaluation engine — accuracy, FP, FN, detection latency
 │   │   ├── run_experiments.py      # Experiment runner — runs all scenarios, outputs CSV

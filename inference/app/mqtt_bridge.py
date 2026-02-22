@@ -167,6 +167,19 @@ class MQTTBridge:
             last = self.monitor.transitions[-1]
             state_data["last_reason"] = last.reason
 
+        # ---- Forward raw heartbeat fields you care about ----
+        # Only forward a small whitelist to avoid polluting TB telemetry.
+        raw = self.last_payload if isinstance(self.last_payload, dict) else {}
+        for k in ("uptime_ms", "rssi_dbm"):
+            if k in raw:
+                state_data[k] = raw[k]
+
+        # Optional: if you want LDR too, uncomment
+        # for k in ("ldr_raw", "ldr_v"):
+        #     if k in raw:
+        #         state_data[k] = raw[k]
+        # -----------------------------------------------------
+
         payload = json.dumps(state_data)
 
         # Publish to Mosquitto (for any subscriber)

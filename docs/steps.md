@@ -183,8 +183,45 @@ Goal: Stand up a separate “inference brain” service that TB can call via RES
 
 ---
 
-## Immediate Next Steps (as of 21 Feb 2026)
-- Integrate the inference service with ThingsBoard rule chain (REST API call on telemetry arrival).
-- Write inferred state + reason tag back to ThingsBoard as device attributes.
-- Standardize telemetry keys: consider renaming `rssi` → `rssi_dbm`.
+## 22 Feb 2026 — MQTT Bridge + Live Integration
+
+### 11) MQTT bridge for live inference (mqtt_bridge.py)
+- Built `MQTTBridge` class that connects the inference state machine to a live Mosquitto MQTT broker.
+- **Flow**: ESP32 → Mosquitto (`devices/{id}/telemetry`) → MQTTBridge subscribes → processes heartbeat/absence → publishes inferred state to Mosquitto (`devices/{id}/state`) + ThingsBoard HTTP API.
+- Key design:
+  - Watchdog timer detects absence: if no heartbeat arrives within `heartbeat_interval + tolerance`, fires an ABSENCE event into the state machine.
+  - Publishes inferred state (state, consecutive absences/heartbeats, last reason) to Mosquitto with retain flag.
+  - Pushes same data to ThingsBoard via HTTP telemetry API (`/api/v1/{token}/telemetry`) for dashboards.
+  - Forwards select raw heartbeat fields (`uptime_ms`, `rssi_dbm`) from the ESP32 payload to ThingsBoard telemetry — whitelisted to avoid polluting TB with unnecessary keys.
+  - Thread-safe with locking around state machine access.
+  - Configurable via environment variables: `MQTT_BROKER_HOST`, `MQTT_BROKER_PORT`, `TB_HTTP_URL`, `TB_DEVICE_TOKEN`, `HEARTBEAT_INTERVAL_S`, etc.
+
+### 12) Removed env.example
+- Deleted the empty `env.example` file — it was a placeholder with no content and no longer needed.
+
+### 13) Telemetry key forwarding in state publish
+- Added selective forwarding of raw ESP32 heartbeat fields (`uptime_ms`, `rssi_dbm`) into the inferred state payload.
+- Uses a whitelist approach — only specific keys are forwarded to avoid polluting ThingsBoard telemetry.
+- LDR sensor fields (`ldr_raw`, `ldr_v`) are supported but commented out as optional.
+
+---
+
+## Decisions Locked (Updated — 22 Feb 2026)
+- Hosting approach: Lightsail Ubuntu 24.04 + Docker.
+- Visuals: ThingsBoard CE.
+- "Brain": separate Python FastAPI service callable from TB via REST.
+- Telemetry: minimal set includes heartbeat + uptime + RSSI.
+- Cost control: stay on 2GB plan; use swap; only upgrade if evidence forces it.
+- Validation: digital twin approach with 7 scenarios and time-aligned metrics.
+- Comparison: proposed FSM vs baseline timeout monitor as control.
+- Live integration: MQTT bridge subscribes to Mosquitto, runs state machine, publishes to both Mosquitto and ThingsBoard HTTP API.
+
+---
+
+## Immediate Next Steps (as of 22 Feb 2026)
+- Deploy the MQTT bridge alongside the inference service on the server (add to docker-compose).
+- Add Mosquitto container to docker-compose stack.
+- Configure ThingsBoard dashboard to display inferred state, reason tags, and forwarded telemetry.
+- End-to-end test: ESP32 → Mosquitto → MQTT bridge → ThingsBoard dashboard.
+- Consider adding `/state` API endpoint to FastAPI for direct status queries.
 

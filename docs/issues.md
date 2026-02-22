@@ -220,7 +220,7 @@ Outcome:
 
 ---
 
-## What We Have Now (Current State)
+## What We Have Now (Current State — 22 Feb 2026)
 - Lightsail Ubuntu 24.04 instance running:
   - ThingsBoard CE container (MQTT + HTTP)
   - Python inference service container (FastAPI, `/health` working)
@@ -238,6 +238,11 @@ Outcome:
   - `run_experiments.py` — experiment runner outputting `results/summary.csv`
   - `plots.py` — publication-quality plots to `results/plots/`
 - **Experiment results generated**: proposed monitor outperforms baseline in suppression (100% vs 60%) and flapping (90% vs 70%) scenarios
+- **Live MQTT bridge** (`mqtt_bridge.py`):
+  - Subscribes to Mosquitto for ESP32 heartbeats
+  - Runs the state machine in real-time with absence watchdog timer
+  - Publishes inferred state to Mosquitto (retain) + ThingsBoard HTTP API
+  - Forwards select raw telemetry fields (`uptime_ms`, `rssi_dbm`) to ThingsBoard
 
 ---
 

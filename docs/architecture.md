@@ -3,10 +3,12 @@
 ## High-Level Flow
 
 ```
-ESP32 (MQTT telemetry: hb, rssi, uptime_ms)
-  → ThingsBoard CE (MQTT ingestion + rule chain)
-    → REST API call to Python inference service
-      → ThingsBoard stores inferred state + reason for dashboards
+ESP32 (MQTT telemetry: hb, rssi_dbm, uptime_ms)
+  → Mosquitto MQTT broker
+    → MQTT Bridge (Python) subscribes to devices/+/telemetry
+      → Runs state machine (heartbeat/absence detection via watchdog timer)
+      → Publishes inferred state to Mosquitto (devices/{id}/state, retained)
+      → Pushes inferred state to ThingsBoard HTTP API (for dashboards)
 ```
 
 ## Component Overview
@@ -22,7 +24,7 @@ ESP32 (MQTT telemetry: hb, rssi, uptime_ms)
 - Nginx reverse proxy forwards port 80 → 8080
 - Rule chain triggers REST call to inference service on telemetry arrival
 
-### 3. Python Inference Service (FastAPI)
+### 3. Python Inference Service (FastAPI + MQTT Bridge)
 - Runs as separate Docker container (port 8000)
 - **API endpoints**: `GET /health`
 - **Core modules**:
@@ -31,10 +33,21 @@ ESP32 (MQTT telemetry: hb, rssi, uptime_ms)
 |--------|---------|
 | `state_machine.py` | Proposed FSM monitor — graduated escalation with hysteresis |
 | `baseline_monitor.py` | Control monitor — simple timeout counter, no suppression/recovery |
+| `mqtt_bridge.py` | Live MQTT integration — subscribes to Mosquitto, runs state machine, publishes inferred state |
 | `digital_twin.py` | Scenario simulator — 7 synthetic scenarios with ground truth |
 | `metrics.py` | Evaluation engine — time-aligned accuracy, FP, FN, detection latency |
 | `run_experiments.py` | Experiment runner — runs all scenarios, exports CSV |
 | `plots.py` | Visualization — generates publication-quality PNG plots |
+
+### 4. MQTT Bridge (mqtt_bridge.py) — Live Integration Layer
+- Subscribes to `devices/+/telemetry` on Mosquitto for ESP32 heartbeats
+- Runs absence watchdog timer: fires ABSENCE event if no heartbeat within `heartbeat_interval + tolerance`
+- On state change, publishes to:
+  - Mosquitto: `devices/{id}/state` (retained) — for any MQTT subscriber
+  - ThingsBoard: HTTP POST to `/api/v1/{token}/telemetry` — for dashboards
+- Selectively forwards raw ESP32 fields (`uptime_ms`, `rssi_dbm`) to ThingsBoard telemetry
+- Thread-safe state machine access with locking
+- Configurable via environment variables: `MQTT_BROKER_HOST`, `MQTT_BROKER_PORT`, `TB_HTTP_URL`, `TB_DEVICE_TOKEN`
 
 ## State Machine Design
 
@@ -107,4 +120,5 @@ Key differences:
 
 - **Hosting**: AWS Lightsail, Ubuntu 24.04, 2GB RAM + 2GB swap
 - **Containers**: Docker Compose v2 (ThingsBoard + Postgres + inference service)
+- **MQTT**: Mosquitto broker for device telemetry and inferred state pub/sub
 - **Reverse proxy**: Nginx (port 80 → ThingsBoard 8080)
