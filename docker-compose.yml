@@ -1,0 +1,61 @@
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: mosquitto
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./mosquitto/config:/mosquitto/config
+    healthcheck:
+      test:
+        ["CMD-SHELL", "mosquitto_pub -t 'healthcheck' -m 'ping' -q 0 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  thingsboard:
+    image: thingsboard/tb-postgres:latest
+    container_name: thingsboard
+    restart: unless-stopped
+    ports:
+      - "8080:9090"
+    environment:
+      - TB_QUEUE_TYPE=in-memory
+      - JAVA_OPTS=-Xmx512m -Xms256m
+    volumes:
+      - thingsboard-data:/data
+      - thingsboard-logs:/var/log/thingsboard
+    healthcheck:
+      test:
+        ["CMD-SHELL", "wget -q --spider http://localhost:9090/login || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 120s
+
+  inference:
+    build:
+      context: ./inference
+      dockerfile: Dockerfile
+    container_name: inference-service
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - MQTT_BROKER_HOST=mosquitto
+      - MQTT_BROKER_PORT=1883
+      - TB_HTTP_URL=http://thingsboard:9090
+      - TB_DEVICE_TOKEN=${TB_DEVICE_TOKEN:-}
+      - HEARTBEAT_INTERVAL_S=30
+      - STALE_AFTER_N=2
+      - FAULT_AFTER_N=4
+      - RECOVERY_HEARTBEATS=2
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+
+volumes:
+  thingsboard-data:
+  thingsboard-logs:

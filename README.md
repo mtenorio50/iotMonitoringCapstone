@@ -50,28 +50,40 @@ ESP32 (MQTT telemetry)
 
 ## Repo structure
 
+```
 .
+├── docker-compose.yml              # ThingsBoard + Postgres + inference containers
+├── nginx/
+│   └── thingsboard.conf            # Reverse proxy config (port 80 → TB 8080)
 ├── inference/
 │   ├── Dockerfile
-│   └── app/
-│       ├── main.py               # FastAPI service (GET /health)
-│       ├── state_machine.py      # Proposed FSM monitor (OK → STALE → FAULT → RECOVERED → SILENT)
-│       ├── baseline_monitor.py   # Control monitor (simple timeout, no hysteresis/suppression)
-│       ├── digital_twin.py       # Scenario simulator — 7 synthetic test scenarios with ground truth
-│       ├── metrics.py            # Evaluation engine — accuracy, FP, FN, detection latency
-│       ├── run_experiments.py    # Experiment runner — runs all scenarios, outputs CSV
-│       └── plots.py              # Visualization — generates publication-quality PNG plots
-├── inference/results/
-│   ├── summary.csv               # Experiment results (7 scenarios × 2 monitors)
-│   └── plots/                    # Generated plot PNGs (accuracy, FP/FN, timelines, trade-offs)
+│   ├── requirements.txt
+│   ├── app/
+│   │   ├── main.py                 # FastAPI service (GET /health)
+│   │   ├── state_machine.py        # Proposed FSM monitor (OK → STALE → FAULT → RECOVERED → SILENT)
+│   │   ├── baseline_monitor.py     # Control monitor (simple timeout, no hysteresis/suppression)
+│   │   ├── digital_twin.py         # Scenario simulator — 7 synthetic test scenarios with ground truth
+│   │   ├── metrics.py              # Evaluation engine — accuracy, FP, FN, detection latency
+│   │   ├── run_experiments.py      # Experiment runner — runs all scenarios, outputs CSV
+│   │   └── plots.py                # Visualization — generates publication-quality PNG plots
+│   ├── tests/
+│   │   └── test_state_machine.py   # Unit tests for the state machine
+│   └── results/
+│       ├── summary.csv             # Experiment results (7 scenarios × 2 monitors)
+│       ├── plots/                  # Generated plot PNGs (accuracy, FP/FN, timelines, trade-offs)
+│       └── scenarios/              # Scenario output data
 ├── esp32/
 │   ├── platformio.ini
 │   └── src/
-│       └── main.cpp
-└── docs/
-    ├── steps.md                  # Dev log (setup + deployment trail)
-    ├── issues.md                 # Issues encountered + fixes applied
-    └── architecture.md           # System architecture notes
+│       ├── main.cpp                # MQTT heartbeat publisher (PubSubClient)
+│       ├── oled.cpp                # OLED display integration
+│       └── ldr.cpp                 # Light-dependent resistor sensor
+├── docs/
+│   ├── steps.md                    # Dev log (dated, setup + deployment trail)
+│   ├── issues.md                   # Issues encountered + fixes applied
+│   └── architecture.md             # System architecture notes
+└── claude.md                       # AI assistant context file
+```
 
 ---
 

@@ -98,7 +98,7 @@ bool connectMQTT()
   Serial.println(TB_PORT);
 
   // ThingsBoard: username = device access token, password empty
-  bool ok = mqtt.connect(clientId.c_str(), TB_TOKEN, nullptr);
+  bool ok = mqtt.connect(clientId.c_str());
 
   if (ok)
   {
@@ -113,7 +113,7 @@ bool connectMQTT()
       bootPayload += "\"reset_reason\":" + String(resetReason);
       bootPayload += "}";
 
-      mqtt.publish("v1/devices/me/telemetry", bootPayload.c_str());
+      mqtt.publish("devices/esp32/telemetry", bootPayload.c_str());
       bootInfoSent = true;
     }
   }
@@ -146,7 +146,7 @@ void sendTelemetry()
   Serial.print("Publishing: ");
   Serial.println(payload);
 
-  bool ok = mqtt.publish("v1/devices/me/telemetry", payload.c_str());
+  bool ok = mqtt.publish("devices/esp32/telemetry", payload.c_str());
   Serial.print("publish() => ");
   Serial.println(ok ? "OK" : "FAIL");
 
