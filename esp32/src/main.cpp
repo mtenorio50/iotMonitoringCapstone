@@ -98,7 +98,7 @@ bool connectMQTT()
   Serial.println(TB_PORT);
 
   // ThingsBoard: username = device access token, password empty
-  bool ok = mqtt.connect(clientId.c_str());
+  bool ok = mqtt.connect(clientId.c_str(), TB_TOKEN, nullptr);
 
   if (ok)
   {
@@ -113,7 +113,8 @@ bool connectMQTT()
       bootPayload += "\"reset_reason\":" + String(resetReason);
       bootPayload += "}";
 
-      mqtt.publish("devices/esp32/telemetry", bootPayload.c_str());
+      mqtt.publish("v1/devices/me/telemetry", bootPayload.c_str());
+      
       bootInfoSent = true;
     }
   }
@@ -138,15 +139,15 @@ void sendTelemetry()
   // payload += "\"hb\":1,";
   payload += "\"uptime_ms\":" + String(now) + ",";
   payload += "\"rssi_dbm\":" + String(WiFi.RSSI());
-  auto r = ldrGet();
-  payload += ",\"ldr_raw\":" + String(r.raw);
-  payload += ",\"ldr_v\":" + String(r.volts, 3);
+  //auto r = ldrGet();
+  //payload += ",\"ldr_raw\":" + String(r.raw);
+  //payload += ",\"ldr_v\":" + String(r.volts, 3);
   payload += "}";
 
   Serial.print("Publishing: ");
   Serial.println(payload);
 
-  bool ok = mqtt.publish("devices/esp32/telemetry", payload.c_str());
+  bool ok = mqtt.publish("v1/devices/me/telemetry", payload.c_str());
   Serial.print("publish() => ");
   Serial.println(ok ? "OK" : "FAIL");
 

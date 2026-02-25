@@ -1,26 +1,11 @@
 services:
-  mosquitto:
-    image: eclipse-mosquitto:2
-    container_name: mosquitto
-    restart: unless-stopped
-    ports:
-      - "1883:1883"
-    volumes:
-      - ./mosquitto/config:/mosquitto/config
-    healthcheck:
-      test:
-        ["CMD-SHELL", "mosquitto_pub -t 'healthcheck' -m 'ping' -q 0 || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 5s
-
   thingsboard:
     image: thingsboard/tb-postgres:latest
     container_name: thingsboard
     restart: unless-stopped
     ports:
-      - "8080:9090"
+      - "8080:9090" # HTTP UI + REST API
+      - "1883:1883" # MQTT broker (built-in) — ESP32 connects here
     environment:
       - TB_QUEUE_TYPE=in-memory
       - JAVA_OPTS=-Xmx512m -Xms256m
@@ -44,8 +29,6 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - MQTT_BROKER_HOST=mosquitto
-      - MQTT_BROKER_PORT=1883
       - TB_HTTP_URL=http://thingsboard:9090
       - TB_DEVICE_TOKEN=${TB_DEVICE_TOKEN:-}
       - HEARTBEAT_INTERVAL_S=30
@@ -53,7 +36,7 @@ services:
       - FAULT_AFTER_N=4
       - RECOVERY_HEARTBEATS=2
     depends_on:
-      mosquitto:
+      thingsboard:
         condition: service_healthy
 
 volumes:
