@@ -9,6 +9,8 @@ This handler:
   2. Feeds them into the state machine
   3. Runs a watchdog timer to detect absence (no heartbeat within window)
   4. Pushes inferred state back to ThingsBoard via HTTP API
+  5. Tracks offline duration: records offline_since on FAULT,
+     computes offline_duration_ms on recovery — zero writes in between
 
 WHY REST INSTEAD OF MQTT?
   - TB stores raw telemetry automatically (uptime_ms, rssi_dbm)
@@ -77,6 +79,12 @@ class HeartbeatHandler:
         self.last_payload: dict = {}
         self.last_heartbeat_ts: float = None
 
+        # ── Offline Duration Tracking ──
+        # offline_since: Unix timestamp when OFFLINE_FAULT began (None if online)
+        # offline_events: history of completed offline periods for /health
+        self.offline_since: float = None
+        self.offline_events: list = []
+
     # ── Heartbeat Processing (called by /infer endpoint) ─────
 
     def receive_heartbeat(self, payload: dict) -> dict:
@@ -104,10 +112,11 @@ class HeartbeatHandler:
                 f"STATE CHANGE: {transition.from_state.value} → "
                 f"{transition.to_state.value} | reason: {transition.reason}"
             )
+
+            # Handle offline duration tracking on state change
+            self._handle_offline_tracking(transition, ts)
+
             # Only push to TB when the state actually changes
-            # WHY: Avoids flooding TB with identical rows.
-            # The raw telemetry (uptime_ms, rssi_dbm) already arrives
-            # directly from ESP32 → TB as the "alive" signal.
             self._push_state_to_tb()
 
         # Reset the watchdog — we got a heartbeat, clock starts over
@@ -149,12 +158,114 @@ class HeartbeatHandler:
                 f"STATE CHANGE: {transition.from_state.value} → "
                 f"{transition.to_state.value} | reason: {transition.reason}"
             )
-            # Only push when state transitions (e.g. OK→STALE, STALE→FAULT)
-            # Subsequent absences within the same state are silent internally
+
+            # Handle offline duration tracking on state change
+            self._handle_offline_tracking(transition, ts)
+
+            # Only push when state transitions
             self._push_state_to_tb()
 
         # Restart watchdog — if still absent, it fires again
         self._reset_watchdog()
+
+    # ── Offline Duration Tracking ────────────────────────────
+
+    def _handle_offline_tracking(self, transition, ts: float):
+        """
+        Track offline start and end times based on state transitions.
+        All timestamps and durations use epoch MILLISECONDS to align
+        with ThingsBoard's native timestamp format.
+
+        WHEN OFFLINE_FAULT BEGINS:
+          - Record offline_since as epoch ms (one write to TB)
+          - Dashboard computes live timer: Date.now() - offline_since
+
+        WHEN DEVICE RECOVERS TO OK:
+          - Compute offline_duration_ms
+          - Push to TB (one write)
+          - Reset offline_since to 0
+        """
+        # Device just entered OFFLINE_FAULT — record the start time
+        if (
+            transition.to_state == DeviceState.OFFLINE_FAULT
+            and self.offline_since is None
+        ):
+            self.offline_since = int(ts * 1000)  # epoch ms
+            logger.info(f"Offline period started at {self.offline_since} (epoch ms)")
+
+        # Device recovered back to OK — compute and store the duration
+        if (
+            transition.to_state == DeviceState.OK
+            and self.offline_since is not None
+        ):
+            recovered_at_ms = int(ts * 1000)
+            duration_ms = recovered_at_ms - self.offline_since
+
+            event = {
+                "offline_since": self.offline_since,
+                "recovered_at": recovered_at_ms,
+                "offline_duration_ms": duration_ms,
+                "recovery_reason": transition.reason,
+            }
+            self.offline_events.append(event)
+
+            logger.info(
+                f"Offline period ended. Duration: {duration_ms}ms "
+                f"({self._format_duration(duration_ms / 1000)})"
+            )
+
+            # Push the completed offline event to TB as telemetry
+            self._push_offline_event_to_tb(event)
+
+            # Clear locally and in TB
+            # Setting to 0 is an explicit "not offline" signal
+            # JS falsy check: 0 is falsy, so widget shows "ONLINE"
+            self.offline_since = None
+
+    def _format_duration(self, seconds: float) -> str:
+        """Human-readable duration string for logging."""
+        if seconds < 60:
+            return f"{seconds:.0f}s"
+        elif seconds < 3600:
+            m = int(seconds // 60)
+            s = int(seconds % 60)
+            return f"{m}m {s}s"
+        else:
+            h = int(seconds // 3600)
+            m = int((seconds % 3600) // 60)
+            return f"{h}h {m}m"
+
+    def _push_offline_event_to_tb(self, event: dict):
+        """
+        Push a completed offline event to ThingsBoard.
+
+        Sends offline_duration_ms as telemetry so it appears in time-series.
+        The dashboard can show a table/chart of offline events with durations.
+        """
+        if not self.tb_device_token:
+            return
+
+        data = {
+            "offline_duration_ms": event["offline_duration_ms"],
+            "offline_since": 0,
+        }
+
+        url = f"{self.tb_http_url}/api/v1/{self.tb_device_token}/telemetry"
+        payload = json.dumps(data).encode("utf-8")
+
+        try:
+            req = urllib.request.Request(
+                url,
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            urllib.request.urlopen(req, timeout=5)
+            logger.info(
+                f"Pushed offline event to TB: {event['offline_duration_ms']}ms"
+            )
+        except Exception as e:
+            logger.warning(f"Failed to push offline event to TB: {e}")
 
     # ── Push State to ThingsBoard ────────────────────────────
 
@@ -177,18 +288,25 @@ class HeartbeatHandler:
         Send inferred state to ThingsBoard via HTTP telemetry API.
 
         WHY telemetry (not attributes)?
-          - Telemetry has time-series storage → you can chart state over time
+          - Telemetry has time-series storage → chart state over time
           - Important for capstone: showing state transitions on a timeline
 
-        NOTE: TB rule chain must filter so these keys don't re-trigger /infer.
-          The filter checks for 'uptime_ms' in the message — inference results
-          don't contain 'uptime_ms', so they won't loop.
+        NOTE: TB rule chain filter checks for 'uptime_ms' in the message.
+          Inference results don't contain 'uptime_ms', so they won't loop.
         """
         if not self.tb_device_token:
             logger.warning("No TB_DEVICE_TOKEN configured — skipping TB push")
             return
 
         data = self._current_state_dict()
+
+        # Include offline_since when device is currently offline
+        # WHY: The dashboard reads this value to compute a live countdown
+        # Formula in widget: current_time - offline_since = live duration
+        # This is written ONCE when FAULT begins, not repeatedly
+        if self.offline_since is not None:
+            data["offline_since"] = self.offline_since
+
         url = f"{self.tb_http_url}/api/v1/{self.tb_device_token}/telemetry"
         payload = json.dumps(data).encode("utf-8")
 
@@ -213,8 +331,6 @@ class HeartbeatHandler:
             f"(absence window: {self.absence_window}s)"
         )
         self._running = True
-        # Start watchdog immediately — if no heartbeat arrives within
-        # the window, we'll detect absence from the very beginning
         self._reset_watchdog()
 
     def stop(self):
@@ -236,4 +352,6 @@ class HeartbeatHandler:
                 "last_heartbeat_ts": self.last_heartbeat_ts,
                 "transitions_count": len(self.monitor.transitions),
                 "last_payload": self.last_payload,
+                "offline_since": self.offline_since,
+                "offline_events": self.offline_events,
             }
