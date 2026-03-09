@@ -4,13 +4,18 @@ Inference Service — FastAPI Entry Point
 Endpoints:
   GET  /health  — service health + current monitor state
   POST /infer   — called by ThingsBoard rule chain on each heartbeat
+  GET  /experiments/scenarios — list available test scenarios
+  GET  /experiments/summary   — run all scenarios, return comparison metrics
+  GET  /experiments/timeline  — run one scenario, return tick-by-tick states
 """
 
 import time
 import logging
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.heartbeat_handler import HeartbeatHandler
+from app.experiment_api import router as experiment_router
 
 # Configure logging
 logging.basicConfig(
@@ -23,8 +28,21 @@ logger = logging.getLogger(__name__)
 app = FastAPI(
     title="Inference Service",
     description="Inference-first IoT device state monitoring",
-    version="0.2.0",
+    version="0.3.0",
 )
+
+# Allow TB dashboard HTML widgets to call our API
+# WHY CORS? TB HTML widgets run in the browser. The browser blocks
+# requests to a different origin (port 8000) unless CORS is enabled.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Register experiment endpoints
+app.include_router(experiment_router)
 
 # Global handler instance
 handler: HeartbeatHandler = None
