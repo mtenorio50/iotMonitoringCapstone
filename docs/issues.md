@@ -220,16 +220,21 @@ Outcome:
 
 ---
 
-## What We Have Now (Current State — 22 Feb 2026)
+## What We Have Now (Current State — 9 Mar 2026)
 - Lightsail Ubuntu 24.04 instance running:
-  - ThingsBoard CE container (MQTT + HTTP)
-  - Python inference service container (FastAPI, `/health` working)
+  - ThingsBoard CE container (`tb-postgres:latest` — built-in MQTT broker + Postgres + HTTP API)
+  - Python inference service container (FastAPI on port 8000)
   - Nginx reverse proxy in front of TB
-- ESP32 publishes telemetry (hb, rssi, uptime_ms) successfully and appears in TB UI.
-- Monitoring tools in place:
-  - `docker ps`, `docker logs`, `docker stats`
-  - `free -h`, `swapon --show`
-  - `nginx -t`, `systemctl status nginx`
+- ESP32 publishes telemetry (`uptime_ms`, `rssi_dbm`) every 30s to ThingsBoard's built-in MQTT broker.
+- **Live inference via REST**:
+  - ThingsBoard rule chain forwards each heartbeat to inference service via POST `/infer`
+  - `HeartbeatHandler` (`heartbeat_handler.py`) processes heartbeats through the state machine
+  - Absence watchdog timer detects missing heartbeats and fires ABSENCE events
+  - Pushes inferred state back to ThingsBoard via HTTP API for dashboards
+  - Tracks offline duration (`offline_since`, `offline_duration_ms`)
+- **Experiment API** (`experiment_api.py`):
+  - REST endpoints serve digital twin results to ThingsBoard HTML widgets
+  - Scenarios, summary, timeline, parameter sweep, and telemetry cost endpoints
 - **Inference validation system complete**:
   - `state_machine.py` — proposed FSM monitor with 5 states, hysteresis, suppression, and audit trail
   - `baseline_monitor.py` — control monitor (simple timeout counter)
@@ -238,11 +243,6 @@ Outcome:
   - `run_experiments.py` — experiment runner outputting `results/summary.csv`
   - `plots.py` — publication-quality plots to `results/plots/`
 - **Experiment results generated**: proposed monitor outperforms baseline in suppression (100% vs 60%) and flapping (90% vs 70%) scenarios
-- **Live MQTT bridge** (`mqtt_bridge.py`):
-  - Subscribes to Mosquitto for ESP32 heartbeats
-  - Runs the state machine in real-time with absence watchdog timer
-  - Publishes inferred state to Mosquitto (retain) + ThingsBoard HTTP API
-  - Forwards select raw telemetry fields (`uptime_ms`, `rssi_dbm`) to ThingsBoard
 
 ---
 
@@ -253,4 +253,6 @@ Outcome:
 - For capstone speed: MQTT + PubSubClient beats library gymnastics.
 - Fixed random seed matters — without seed=42 in the digital twin, experiments produce different results each run and results become unreproducible.
 - Time-aligned sampling (1-second intervals) is essential for fair accuracy metrics — event-level comparison would distort results when event spacing is uneven.
+- A separate MQTT broker (Mosquitto) was unnecessary — ThingsBoard’s built-in broker + rule chain is simpler and eliminates a moving part. REST-based integration via the rule chain is TB’s native approach.
+- Let ThingsBoard store raw telemetry automatically; the inference service only needs to know “a heartbeat arrived” — no need to forward telemetry fields manually.
 

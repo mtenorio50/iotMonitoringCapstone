@@ -151,6 +151,44 @@ Record of development activity for the Smart City Streets capstone project.
 
 ---
 
+## 2026-02-25 — Infrastructure Simplification
+
+**Commit:** `da36334` — *change infrastructure*
+
+- Replaced MQTT bridge (`mqtt_bridge.py`) with REST-based `HeartbeatHandler` (`heartbeat_handler.py`)
+- Removed Mosquitto broker from docker-compose — ThingsBoard's built-in MQTT broker handles all device telemetry
+- New integration flow: TB rule chain → REST POST `/infer` → HeartbeatHandler → pushes state back to TB HTTP API
+- Added offline duration tracking: `offline_since` on FAULT, `offline_duration_ms` on recovery
+- Simplified docker-compose to two services: ThingsBoard (`tb-postgres`) and inference
+
+**Files:** Infrastructure refactor
+
+---
+
+## 2026-03-03 — Documentation & Code Updates
+
+**Commit:** `56a3a6f` — *update*
+
+- Updated documentation and code to reflect architecture changes
+- Cleaned up references to removed Mosquitto/MQTT bridge components
+
+---
+
+## 2026-03-09 — Experiment API Endpoints
+
+**Commit:** `f3b3817` — *included experiments*
+
+- Added `experiment_api.py` — REST endpoints for ThingsBoard HTML widgets:
+  - `GET /experiments/scenarios` — list all 7 test scenarios
+  - `GET /experiments/summary` — run all scenarios, return comparison metrics
+  - `GET /experiments/timeline` — run one scenario, return tick-by-tick states
+  - `GET /experiments/sweep` — RQ3 parameter sweep (15s, 30s, 60s, 120s)
+  - `GET /experiments/telemetry-cost` — telemetry volume analysis
+- Updated `main.py` to include experiment router and CORS middleware
+- ESP32 telemetry keys finalized: `uptime_ms`, `rssi_dbm` (hb and LDR fields commented out)
+
+---
+
 ## Summary Timeline
 
 | Date | Milestone |
@@ -160,4 +198,7 @@ Record of development activity for the Smart City Streets capstone project.
 | 2026-02-21 | Restructured to monorepo (esp32 / inference / nginx) |
 | 2026-02-21 | Built full inference pipeline: state machine, digital twin, metrics, experiments, plots |
 | 2026-02-21 | Merged inference branch, updated all documentation |
-| 2026-02-22 | Docker Compose setup, live MQTT bridge for real-time monitoring |
+| 2026-02-22 | Docker Compose setup, initial MQTT bridge |
+| 2026-02-25 | Simplified to REST-based integration — removed Mosquitto, replaced MQTT bridge with HeartbeatHandler |
+| 2026-03-03 | Documentation and code cleanup |
+| 2026-03-09 | Added experiment API endpoints for dashboard widgets |

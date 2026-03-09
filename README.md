@@ -8,8 +8,8 @@ The stack is intentionally lightweight and cheap to run (AWS Lightsail + Docker)
 
 ## What this project demonstrates
 
-1) Minimal device telemetry  
-- ESP32 publishes a heartbeat (`hb`) every fixed interval plus small context signals (e.g., RSSI, uptime) to help disambiguate comms quality and device resets.
+1) Minimal device telemetry
+- ESP32 publishes `uptime_ms` and `rssi_dbm` every 30 seconds to help disambiguate comms quality and device resets. The arrival of any telemetry message acts as the heartbeat signal.
 
 2) Arrival + absence as first-class events  
 - Telemetry arrival is an event.
@@ -33,20 +33,22 @@ The stack is intentionally lightweight and cheap to run (AWS Lightsail + Docker)
 - Parameter sweeps vary heartbeat interval to explore telemetry-rate trade-offs (RQ3).
 - Publication-quality plots generated for the report.
 
-6) ThingsBoard used for visualization + storage
-- Mosquitto handles MQTT transport (device telemetry + inferred state pub/sub).
-- Python MQTT bridge is the “brain” that subscribes to heartbeats, runs the state machine, and pushes inferred state to both Mosquitto and ThingsBoard HTTP API.
-- ThingsBoard provides dashboards and telemetry storage.
+6) ThingsBoard used for transport, visualization + storage
+- ThingsBoard's built-in MQTT broker handles device telemetry ingestion and storage.
+- A ThingsBoard rule chain forwards each heartbeat to the inference service via REST POST (`/infer`).
+- The Python `HeartbeatHandler` is the “brain” that processes heartbeats, runs the state machine with an absence watchdog timer, and pushes inferred state back to ThingsBoard via HTTP API.
+- ThingsBoard provides dashboards for both raw telemetry and inferred state.
 
 ---
 
 ## Architecture (high level)
 
-ESP32 (MQTT telemetry: hb, rssi_dbm, uptime_ms)
-→ Mosquitto MQTT broker
-→ MQTT Bridge (Python) subscribes, runs state machine, detects absence
-→ Publishes inferred state to Mosquitto (retained) + ThingsBoard HTTP API
-→ ThingsBoard dashboards display inferred state, reason tags, and forwarded telemetry
+ESP32 (MQTT telemetry: uptime_ms, rssi_dbm)
+→ ThingsBoard built-in MQTT broker (port 1883)
+→ ThingsBoard rule chain forwards heartbeat via REST POST to inference service /infer
+→ HeartbeatHandler runs state machine + absence watchdog timer
+→ Pushes inferred state back to ThingsBoard via HTTP API
+→ ThingsBoard dashboards display inferred state, reason tags, and telemetry
 
 ---
 
@@ -54,17 +56,19 @@ ESP32 (MQTT telemetry: hb, rssi_dbm, uptime_ms)
 
 ```
 .
-├── docker-compose.yml              # ThingsBoard + Postgres + inference containers
+├── docker-compose.yml              # ThingsBoard (with built-in MQTT + Postgres) + inference service
+├── .env                            # Environment variables (TB_DEVICE_TOKEN, etc.)
 ├── nginx/
 │   └── thingsboard.conf            # Reverse proxy config (port 80 → TB 8080)
 ├── inference/
 │   ├── Dockerfile
 │   ├── requirements.txt
 │   ├── app/
-│   │   ├── main.py                 # FastAPI service (GET /health)
+│   │   ├── main.py                 # FastAPI entry point (GET /health, POST /infer, experiment endpoints)
+│   │   ├── heartbeat_handler.py    # REST-based heartbeat processing + absence watchdog + offline tracking
 │   │   ├── state_machine.py        # Proposed FSM monitor (OK → STALE → FAULT → RECOVERED → SILENT)
 │   │   ├── baseline_monitor.py     # Control monitor (simple timeout, no hysteresis/suppression)
-│   │   ├── mqtt_bridge.py          # Live MQTT integration — subscribes to Mosquitto, runs state machine
+│   │   ├── experiment_api.py       # REST endpoints for dashboard (scenarios, summary, timeline, sweep)
 │   │   ├── digital_twin.py         # Scenario simulator — 7 synthetic test scenarios with ground truth
 │   │   ├── metrics.py              # Evaluation engine — accuracy, FP, FN, detection latency
 │   │   ├── run_experiments.py      # Experiment runner — runs all scenarios, outputs CSV
@@ -78,14 +82,14 @@ ESP32 (MQTT telemetry: hb, rssi_dbm, uptime_ms)
 ├── esp32/
 │   ├── platformio.ini
 │   └── src/
-│       ├── main.cpp                # MQTT heartbeat publisher (PubSubClient)
+│       ├── main.cpp                # MQTT telemetry publisher (PubSubClient) + LEDs + button toggle
 │       ├── oled.cpp                # OLED display integration
 │       └── ldr.cpp                 # Light-dependent resistor sensor
-├── docs/
-│   ├── steps.md                    # Dev log (dated, setup + deployment trail)
-│   ├── issues.md                   # Issues encountered + fixes applied
-│   └── architecture.md             # System architecture notes
-└── claude.md                       # AI assistant context file
+└── docs/
+    ├── steps.md                    # Dev log (dated, setup + deployment trail)
+    ├── issues.md                   # Issues encountered + fixes applied
+    ├── architecture.md             # System architecture notes
+    └── CHANGELOG.md                # Record of commits and milestones
 ```
 
 ---
@@ -116,11 +120,23 @@ Check:
 
 (If you already have both v1 `docker-compose` and v2 `docker compose`, prefer v2.)
 
-### 2) Clone repo
+### 2) Clone repo and configure
 ```bash
 git clone <your-repo-url>
 cd capstoneProject
 ```
+
+Set your ThingsBoard device token in `.env`:
+```
+TB_DEVICE_TOKEN=<your-device-access-token>
+```
+
+### 3) Start the stack
+```bash
+docker compose up -d
+```
+
+This starts ThingsBoard (ports 8080 HTTP, 1883 MQTT) and the inference service (port 8000). ThingsBoard takes ~2 minutes to boot on first run.
 
 ---
 
